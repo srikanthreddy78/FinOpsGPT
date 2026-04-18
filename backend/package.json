@@ -1,0 +1,20 @@
+{
+  "name": "cloudpulse-finops-backend",
+  "version": "1.0.0",
+  "description": "AI-Powered FinOps Agent Backend - Analyzes AWS resources, kills waste, requires approval for downgrades",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-ec2": "^3.700.0",
+    "@aws-sdk/client-rds": "^3.700.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.1",
+    "uuid": "^11.0.3",
+    "xlsx": "^0.18.5"
+  }
+}
