@@ -6,7 +6,7 @@ const { analyzeAll } = require('../rules/engine');
 const { computeKPIs } = require('../kpi/calculator');
 const { analyzeWithClaude, analyzeMultipleWithClaude, chatWithAgent } = require('../agent/claude');
 
-// POST /api/analyze — run Claude AI analysis on all or specific resources
+// POST /api/analyze — run OpenAI analysis on all or specific resources
 router.post('/', async (req, res) => {
   try {
     const { resource_id, resource_ids } = req.body;

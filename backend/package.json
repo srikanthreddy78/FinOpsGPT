@@ -8,7 +8,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.73.0",
     "@aws-sdk/client-ec2": "^3.700.0",
     "@aws-sdk/client-rds": "^3.700.0",
     "cors": "^2.8.5",

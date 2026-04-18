@@ -1,10 +1,10 @@
 // src/routes/agent.js
-// THE AI AGENT — Claude analyzes resources, decides actions, and executes them
+// THE AI AGENT — OpenAI analyzes resources, decides actions, and executes them
 // This replaces the rule engine with actual AI reasoning
 
 const express = require('express');
 const router = express.Router();
-const Anthropic = require('@anthropic-ai/sdk').default;
+const OpenAI = require('openai');
 const { getResources, getResourceById, getSystemPrompt, getPricing, getDecisionRules } = require('../data/loader');
 const { createApproval, logAutoExecution } = require('../approvals/store');
 const ec2Actions = require('../actions/ec2');
@@ -12,15 +12,28 @@ const ebsActions = require('../actions/ebs');
 const rdsActions = require('../actions/rds');
 
 function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_anthropic_key_here') {
-    throw new Error('ANTHROPIC_API_KEY not set. Add your key to .env file.');
+  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_key_here') {
+    throw new Error('OPENAI_API_KEY not set. Add your key to .env file.');
   }
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
+// Helper: call OpenAI and return the text content
+async function callOpenAI(client, { model = 'gpt-4o', max_tokens = 4096, system, userContent }) {
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userContent }
+    ]
+  });
+  return response.choices[0]?.message?.content || '';
 }
 
 // ============================================================
 // POST /api/agent/scan — Full AI Agent Pipeline
-// Claude scans ALL resources → decides actions → auto-kills zombies → queues the rest
+// OpenAI scans ALL resources → decides actions → auto-kills zombies → queues the rest
 // ============================================================
 router.post('/scan', async (req, res) => {
   try {
@@ -30,9 +43,9 @@ router.post('/scan', async (req, res) => {
     const rules = getDecisionRules();
 
     console.log('\n[AI AGENT] Starting full infrastructure scan...');
-    console.log(`[AI AGENT] Analyzing ${resources.length} resources with Claude...\n`);
+    console.log(`[AI AGENT] Analyzing ${resources.length} resources with OpenAI...\n`);
 
-    // Build resource summaries for Claude
+    // Build resource summaries for OpenAI
     const resourceData = resources.map((r) => ({
       resource_id: r.resource_id,
       resource_type: r.resource_type,
@@ -123,38 +136,33 @@ For EACH resource, decide an action. Respond with this exact JSON structure:
   ]
 }`;
 
-    // Call Claude
-    console.log('[AI AGENT] Sending data to Claude for analysis...');
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    // Call OpenAI
+    console.log('[AI AGENT] Sending data to OpenAI for analysis...');
+    const rawText = await callOpenAI(client, {
+      model: 'gpt-4o',
       max_tokens: 8192,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+      userContent: userPrompt
     });
 
-    const rawText = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text)
-      .join('');
-
-    // Parse Claude's response
+    // Parse OpenAI's response
     let aiDecisions;
     try {
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in response');
       aiDecisions = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
-      console.error('[AI AGENT] Failed to parse Claude response:', parseErr.message);
+      console.error('[AI AGENT] Failed to parse OpenAI response:', parseErr.message);
       return res.status(500).json({
         error: 'Failed to parse AI response',
         raw_response: rawText.slice(0, 2000)
       });
     }
 
-    console.log(`[AI AGENT] Claude returned ${aiDecisions.decisions?.length || 0} decisions`);
+    console.log(`[AI AGENT] OpenAI returned ${aiDecisions.decisions?.length || 0} decisions`);
 
     // ============================================================
-    // EXECUTE: Auto-kill what Claude says to kill, queue the rest
+    // EXECUTE: Auto-kill what AI says to kill, queue the rest
     // ============================================================
     const autoExecuted = [];
     const approvalQueued = [];
@@ -250,7 +258,7 @@ For EACH resource, decide an action. Respond with this exact JSON structure:
 
     res.json({
       agent: 'CloudPulse AI Agent',
-      model: 'claude-sonnet-4-20250514',
+      model: 'gpt-4o',
       mode: process.env.EXECUTE_MODE || 'dry_run',
       scan_summary: aiDecisions.scan_summary || {},
       results: {
@@ -293,13 +301,11 @@ router.post('/analyze/:id', async (req, res) => {
     const pricing = getPricing();
     const rules = getDecisionRules();
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const text = await callOpenAI(client, {
+      model: 'gpt-4o',
       max_tokens: 2048,
       system: `You are CloudPulse, an AI FinOps advisor. Analyze this AWS resource and recommend an action. Be specific — cite actual metric values. Respond with ONLY a JSON object, no markdown.`,
-      messages: [{
-        role: 'user',
-        content: `Analyze this resource:
+      userContent: `Analyze this resource:
 
 ${JSON.stringify(resource, null, 2)}
 
@@ -320,14 +326,12 @@ Respond with:
   "risk_level": "low|medium|high",
   "implementation_steps": ["step1", "step2", "step3"]
 }`
-      }]
     });
 
-    const text = response.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw: text };
 
-    res.json({ agent: 'Claude AI', resource_id: req.params.id, analysis });
+    res.json({ agent: 'OpenAI GPT-4o', resource_id: req.params.id, analysis });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -345,7 +349,7 @@ router.post('/chat', async (req, res) => {
     const resources = getResources();
     const pricing = getPricing();
 
-    // Build full context for Claude
+    // Build full context for OpenAI
     const resourceSummary = resources.map((r) => ({
       id: r.resource_id,
       type: r.resource_type,
@@ -363,8 +367,8 @@ router.post('/chat', async (req, res) => {
       last_active: r.last_active_date
     }));
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const answer = await callOpenAI(client, {
+      model: 'gpt-4o',
       max_tokens: 2048,
       system: `You are CloudPulse, an AI FinOps agent managing AWS infrastructure. You have access to ${resources.length} resources with a total monthly spend of $7,172.23.
 
@@ -375,11 +379,10 @@ Pricing reference:
 ${JSON.stringify(pricing, null, 2)}
 
 Answer the user's question with specific resource IDs, names, dollar amounts, and actionable recommendations. Be direct and specific.`,
-      messages: [{ role: 'user', content: question }]
+      userContent: question
     });
 
-    const answer = response.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
-    res.json({ question, answer, model: 'claude-sonnet-4-20250514' });
+    res.json({ question, answer, model: 'gpt-4o' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -393,15 +396,13 @@ router.post('/kill', async (req, res) => {
     const client = getClient();
     const resources = getResources();
 
-    console.log('[AI AGENT] 💀 Kill mode activated — asking Claude what to terminate...');
+    console.log('[AI AGENT] 💀 Kill mode activated — asking OpenAI what to terminate...');
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const text = await callOpenAI(client, {
+      model: 'gpt-4o',
       max_tokens: 4096,
       system: `You are CloudPulse kill agent. Identify resources that should be TERMINATED or DELETED immediately. Only include resources that are clearly waste — zombies, idle, unattached. Do NOT include production resources that are actively serving traffic. Respond with ONLY a JSON array, no markdown.`,
-      messages: [{
-        role: 'user',
-        content: `Which of these resources should be killed immediately?
+      userContent: `Which of these resources should be killed immediately?
 
 ${JSON.stringify(resources.map(r => ({
   id: r.resource_id, type: r.resource_type, name: r.name,
@@ -422,14 +423,12 @@ Return JSON array:
     "reasoning": "why kill it"
   }
 ]`
-      }]
     });
 
-    const text = response.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     const killList = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
-    console.log(`[AI AGENT] Claude identified ${killList.length} resources to kill`);
+    console.log(`[AI AGENT] OpenAI identified ${killList.length} resources to kill`);
 
     // Execute kills
     const results = [];
@@ -456,7 +455,7 @@ Return JSON array:
 
     res.json({
       agent: 'CloudPulse Kill Agent',
-      model: 'claude-sonnet-4-20250514',
+      model: 'gpt-4o',
       mode: process.env.EXECUTE_MODE || 'dry_run',
       killed: results.length,
       monthly_savings: Math.round(totalSaved * 100) / 100,

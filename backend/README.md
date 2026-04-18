@@ -46,9 +46,9 @@ GET  /api/resources/:id       → Single resource detail
 GET  /api/recommendations     → Recommendations sorted by savings
 ```
 
-### AI Agent (requires ANTHROPIC_API_KEY)
+### AI Agent (requires OPENAI_API_KEY)
 ```
-POST /api/analyze             → Claude AI analysis (body: { resource_id } or empty for all)
+POST /api/analyze             → OpenAI analysis (body: { resource_id } or empty for all)
 POST /api/analyze/chat        → Chat: { question: "which servers should I kill?" }
 ```
 
@@ -97,7 +97,7 @@ backend/
     ├── data/loader.js           ← Reads dataset, normalizes types, pricing lookups
     ├── rules/engine.js          ← 21 rules (R01-R21) with permission model
     ├── kpi/calculator.js        ← Waste %, savings, by team/env/type, CPU efficiency
-    ├── agent/claude.js          ← Anthropic API integration (single/multi/chat)
+    ├── agent/claude.js          ← OpenAI API integration (single/multi/chat)
     ├── actions/
     │   ├── ec2.js               ← terminate, stop, start, modify instance type
     │   ├── ebs.js               ← delete, migrate type, resize

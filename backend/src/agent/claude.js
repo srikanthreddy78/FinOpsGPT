@@ -1,19 +1,19 @@
 // src/agent/claude.js
-// Claude AI Agent — uses Anthropic API for intelligent resource analysis and recommendations
+// OpenAI Agent — uses OpenAI API for intelligent resource analysis and recommendations
 
-const Anthropic = require('@anthropic-ai/sdk').default;
+const OpenAI = require('openai');
 const { getSystemPrompt, getPricing, getDecisionRules } = require('../data/loader');
 
 let client = null;
 
 function getClient() {
   if (!client) {
-    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
   return client;
 }
 
-// Analyze a single resource with Claude
+// Analyze a single resource with OpenAI
 async function analyzeWithClaude(resource) {
   const systemPrompt = getSystemPrompt();
   const pricing = getPricing();
@@ -59,18 +59,17 @@ Respond with a JSON object:
 }`;
 
   try {
-    const anthropic = getClient();
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const openai = getClient();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
       max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]
     });
 
-    const text = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text)
-      .join('');
+    const text = response.choices[0]?.message?.content || '';
 
     // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -78,14 +77,14 @@ Respond with a JSON object:
       return JSON.parse(jsonMatch[0]);
     }
 
-    return { raw_response: text, error: 'Could not parse JSON from Claude response' };
+    return { raw_response: text, error: 'Could not parse JSON from OpenAI response' };
   } catch (error) {
-    console.error('[Claude Agent] API error:', error.message);
+    console.error('[OpenAI Agent] API error:', error.message);
     return { error: error.message };
   }
 }
 
-// Analyze multiple resources with Claude
+// Analyze multiple resources with OpenAI
 async function analyzeMultipleWithClaude(resources) {
   const systemPrompt = getSystemPrompt();
   const pricing = getPricing();
@@ -144,27 +143,26 @@ Respond with a JSON object:
 }`;
 
   try {
-    const anthropic = getClient();
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const openai = getClient();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
       max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]
     });
 
-    const text = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text)
-      .join('');
+    const text = response.choices[0]?.message?.content || '';
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
 
-    return { raw_response: text, error: 'Could not parse JSON from Claude response' };
+    return { raw_response: text, error: 'Could not parse JSON from OpenAI response' };
   } catch (error) {
-    console.error('[Claude Agent] API error:', error.message);
+    console.error('[OpenAI Agent] API error:', error.message);
     return { error: error.message };
   }
 }
@@ -181,20 +179,19 @@ If they ask "which servers should I kill" or similar, give a ranked list with sa
 Always include dollar amounts and specific resource IDs.`;
 
   try {
-    const anthropic = getClient();
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const openai = getClient();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
       max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: question }]
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: question }
+      ]
     });
 
-    return response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text)
-      .join('');
+    return response.choices[0]?.message?.content || '';
   } catch (error) {
-    console.error('[Claude Agent] Chat error:', error.message);
+    console.error('[OpenAI Agent] Chat error:', error.message);
     return `Error communicating with AI agent: ${error.message}`;
   }
 }
